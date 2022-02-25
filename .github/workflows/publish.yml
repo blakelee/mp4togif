@@ -6,9 +6,12 @@ on:
 
 jobs:
   build:
-
-    runs-on: [ 'macos-latest', 'windows-2022' ]
-
+  
+    strategy:
+      matrix:
+        os: [ 'macos-latest', 'windows-latest' ]
+        
+    runs-on: ${{ matrix.os }}
     steps:
     - uses: actions/checkout@v2
     - name: set up JDK 15
