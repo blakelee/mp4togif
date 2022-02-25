@@ -1,4 +1,4 @@
-name: Android CI
+name: Jetpack Compose Desktop CI
 
 on:
   push:
