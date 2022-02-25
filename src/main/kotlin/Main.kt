@@ -11,17 +11,15 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.res.loadImageBitmap
-import androidx.compose.ui.res.useResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.FrameWindowScope
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.application
-import kotlinx.coroutines.*
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
-import java.nio.file.Files
-import java.nio.file.Paths
-import java.nio.file.StandardCopyOption
 
 
 fun main() = application {
@@ -38,31 +36,29 @@ fun App(file: File? = null, windowScope: FrameWindowScope) {
 
     var state by remember { mutableStateOf<State>(Initialize) }
 
-    lateinit var ffmpeg: File
+    val ffmpeg = File(System.getProperty("compose.application.resources.dir")!!)
+        .listFiles()!!
+        .first { it.name.contains("ffmpeg") }
 
-    useResource("ffmpeg") {
-        val path = Paths.get("/tmp", "ffmpeg")
-        Files.copy(it, path, StandardCopyOption.REPLACE_EXISTING)
-        ffmpeg = path.toFile()
-        ffmpeg.setReadable(true)
-        ffmpeg.setExecutable(true)
-    }
+    val tempDir = File(System.getProperty("java.io.tmpdir") + "temp.jpg")
 
     file?.let {
         state = Loading
         rememberCoroutineScope().launch {
             withContext(Dispatchers.IO) {
 
-                val command = "${ffmpeg.absolutePath} -y -ss 0.0 -i ${file.path} -vframes 1 -f image2 temp.jpg"
+                val command = "${ffmpeg.absolutePath} -y -ss 0.0 -i ${file.absolutePath} -vframes 1 -f image2 ${tempDir.absolutePath}"
 
-                ProcessBuilder()
+                val process = ProcessBuilder()
+                    .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                    .redirectErrorStream(true)
                     .command(command.split(' '))
                     .start()
-                    .waitFor()
 
-                withContext(Dispatchers.Main) {
-                    state = Processed(File("temp.jpg"), file)
-                }
+                process.inputStream.close()
+                process.waitFor()
+
+                state = Processed(tempDir, file)
             }
         }
     }
@@ -159,10 +155,14 @@ fun App(file: File? = null, windowScope: FrameWindowScope) {
                 rememberCoroutineScope().launch {
                     withContext(Dispatchers.IO) {
 
-                        ProcessBuilder()
+                        val process = ProcessBuilder()
+                            .redirectOutput(ProcessBuilder.Redirect.PIPE)
+                            .redirectErrorStream(true)
                             .command(currentState.command.split(' '))
                             .start()
-                            .waitFor()
+
+                        process.inputStream.close()
+                        process.waitFor()
 
                         state = Converted
                     }
