@@ -1,5 +1,4 @@
 import androidx.compose.desktop.ui.tooling.preview.Preview
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.material.*
@@ -9,8 +8,6 @@ import androidx.compose.material.icons.filled.LinkOff
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.ImageBitmap
-import androidx.compose.ui.res.loadImageBitmap
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.FrameWindowScope
@@ -24,6 +21,7 @@ import java.io.File
 
 fun main() = application {
     Window(onCloseRequest = ::exitApplication) {
+        this.window.setSize(300, 300)
         var file by remember { mutableStateOf<File?>(null) }
         DropHandler { file = null; file = it }
         App(file, this)
@@ -40,27 +38,10 @@ fun App(file: File? = null, windowScope: FrameWindowScope) {
         .listFiles()!!
         .first { it.name.contains("ffmpeg") }
 
-    val tempDir = File(System.getProperty("java.io.tmpdir") + "temp.jpg")
+    ffmpeg.setExecutable(true)
 
     file?.let {
-        state = Loading
-        rememberCoroutineScope().launch {
-            withContext(Dispatchers.IO) {
-
-                val command = "${ffmpeg.absolutePath} -y -ss 0.0 -i ${file.absolutePath} -vframes 1 -f image2 ${tempDir.absolutePath}"
-
-                val process = ProcessBuilder()
-                    .redirectOutput(ProcessBuilder.Redirect.PIPE)
-                    .redirectErrorStream(true)
-                    .command(command.split(' '))
-                    .start()
-
-                process.inputStream.close()
-                process.waitFor()
-
-                state = Processed(tempDir, file)
-            }
-        }
+        state = Processed(file)
     }
 
     MaterialTheme {
@@ -73,26 +54,12 @@ fun App(file: File? = null, windowScope: FrameWindowScope) {
                 CircularProgressIndicator(modifier = Modifier.size(96.dp))
             }
             is Processed -> Row {
-                val imageBitmap: ImageBitmap = remember(currentState.stillImage) {
-                    loadImageBitmap(currentState.stillImage.inputStream())
-                }
-
-                Image(
-                    bitmap = imageBitmap,
-                    contentDescription = null,
-                    modifier = Modifier.fillMaxWidth(0.5f)
-                )
 
                 Column(modifier = Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
                     var linked by remember { mutableStateOf(true) }
                     var width by remember { mutableStateOf("1.00") }
                     var height by remember { mutableStateOf("1.00") }
                     val linkedState by derivedStateOf { if (linked) Icons.Default.Link else Icons.Default.LinkOff }
-
-                    Text(
-                        "Original dimensions: ${imageBitmap.height}x${imageBitmap.width}",
-                        modifier = Modifier.padding(top = 32.dp)
-                    )
 
                     Row(
                         modifier = Modifier.fillMaxWidth().padding(vertical = 16.dp),
@@ -133,13 +100,12 @@ fun App(file: File? = null, windowScope: FrameWindowScope) {
                     }
 
                     Button(onClick = {
-                        val file =
-                            saveFile(windowScope.window, "Save Gif", currentState.stillImage.nameWithoutExtension)
-                        val width = (width.toDouble() * imageBitmap.width).toInt()
-                        val height = (height.toDouble() * imageBitmap.height).toInt()
+                        val directory = currentState.originalFile.parent
+                        val name = currentState.originalFile.nameWithoutExtension
+                        val fileName: String = directory + File.separatorChar + name + ".gif"
 
                         val cmd = "${ffmpeg.absolutePath} -y -i ${currentState.originalFile.absolutePath} -vf " +
-                                "scale=$width:$height,fps=50 ${file.absolutePath}"
+                                "scale=iw*$width:ih*$height,fps=50 $fileName"
 
                         state = Processing(cmd)
                     }) {
@@ -161,8 +127,8 @@ fun App(file: File? = null, windowScope: FrameWindowScope) {
                             .command(currentState.command.split(' '))
                             .start()
 
-                        process.inputStream.close()
                         process.waitFor()
+                        process.inputStream.close()
 
                         state = Converted
                     }
@@ -178,6 +144,6 @@ fun App(file: File? = null, windowScope: FrameWindowScope) {
 sealed class State
 object Initialize : State()
 object Loading : State()
-data class Processed(val stillImage: File, val originalFile: File) : State()
+data class Processed(val originalFile: File) : State()
 data class Processing(val command: String) : State()
 object Converted : State()
